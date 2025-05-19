@@ -15,7 +15,7 @@
     "content_scripts": [
       {
         "matches": ["<all_urls>"],
-        "js": ["scripts/readability.js", "content.js"]
+        "js": ["scripts/Readability.js", "content.js"]
       }
     ],
 
