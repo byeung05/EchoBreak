@@ -3,8 +3,9 @@
     "name": "EchoBreak",
     "version": "1.0",
     "description": "Analyzes articles to provide different perspectives on news articles.",
-    "permissions": ["activeTab", "scripting"],
+    "permissions": ["activeTab", "scripting", "storage"],
     "host_permissions": ["<all_urls>"],
+
     "background": {
       "service_worker": "background.js"
     },
@@ -16,6 +17,17 @@
         "matches": ["<all_urls>"],
         "js": ["scripts/readability.js", "content.js"]
       }
-    ]
+    ],
+
+    "web_accessible_resources": [
+    {
+      "resources": [
+        "sidebar/index.html",
+        "sidebar/sidebar.js",
+        "sidebar/sidebar.css"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
   }
   
