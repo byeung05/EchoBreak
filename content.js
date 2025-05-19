@@ -1,8 +1,14 @@
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+(function () {
+  const article = new Readability(document.cloneNode(true)).parse();
+
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "getArticle") {
-      const title = document.title;
-      const content = document.body.innerText.slice(0, 500); // sample preview
-      sendResponse({ title, content });
+      sendResponse({
+        title: article.title,
+        content: article.textContent,
+        byline: article.byline || "Unknown Author",
+        url: window.location.href
+      });
     }
   });
-  
+})();
