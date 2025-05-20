@@ -1,8 +1,9 @@
 // Load analysis data from chrome.storage
-chrome.storage.local.get("articleData", (res) => {
-    const data = res.articleData || {};
-    document.getElementById("title").textContent = data.title || "No title";
-    document.getElementById("byline").textContent = data.byline || "Unknown Author";
-    document.getElementById("content").textContent = data.content || "No content available.";
-  });
+window.onload = async () => {
+    const { articleData } = await chrome.storage.local.get("articleData");
   
+    document.getElementById("title").innerText   = articleData.title;
+    document.getElementById("byline").innerText  = articleData.byline;
+    document.getElementById("url").innerText     = articleData.url;
+    document.getElementById("summary").innerText = articleData.summary;
+  };
