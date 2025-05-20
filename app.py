@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from transformers import pipeline
+from flask_cors import CORS
 import os
 
 app = Flask(__name__)
@@ -24,4 +25,7 @@ def analyze():
     return jsonify({"summary": summary[0]['summary_text']})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0")
+    port = int(os.environ.get("PORT", "5000"))
+    host = "0.0.0.0"
+    print(f"🔌 Binding to {host}:{port}…")
+    app.run(host=host, port=port)
