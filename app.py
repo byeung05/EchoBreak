@@ -6,17 +6,47 @@ import os
 app = Flask(__name__)
 CORS(app)
 
+# Current Render Process only has 512 MiB of memory. Switching approach 
+
 # LED summarizer setup 
-LED_MODEL   = "allenai/led-base-16384"
-tokenizer   = AutoTokenizer.from_pretrained(LED_MODEL)
-model       = AutoModelForSeq2SeqLM.from_pretrained(LED_MODEL)
-summarizer  = pipeline(
+# LED_MODEL   = "allenai/led-base-16384"
+# tokenizer   = AutoTokenizer.from_pretrained(LED_MODEL)
+# model       = AutoModelForSeq2SeqLM.from_pretrained(LED_MODEL)
+# summarizer  = pipeline(
+#     "summarization",
+#     model=model,
+#     tokenizer=tokenizer,
+#     device=-1   # CPU; change to 0 if you have a GPU
+# )
+
+# ─── 1) Load BART summarization pipeline ───────────────────────────────────────
+MODEL_NAME = "facebook/bart-large-cnn"
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+model     = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
+summarizer = pipeline(
     "summarization",
     model=model,
     tokenizer=tokenizer,
-    device=-1   # CPU; change to 0 if you have a GPU
+    device=-1   # change to 0 if you have a GPU
 )
 
+
+# ─── 2) Chunking helper ────────────────────────────────────────────────────────
+def chunk_text(text, max_tokens=800, overlap_tokens=50):
+    """
+    Splits `text` into chunks of ≤ max_tokens (with a small overlap to maintain context).
+    Returns a list of strings.
+    """
+    tokens = tokenizer.tokenize(text)
+    chunks = []
+    start = 0
+    while start < len(tokens):
+        end = min(start + max_tokens, len(tokens))
+        chunk = tokenizer.convert_tokens_to_string(tokens[start:end])
+        chunks.append(chunk)
+        # overlap a bit so that you don't break sentences abruptly
+        start = end - overlap_tokens
+    return chunks
 
 @app.route("/")
 def home():
@@ -30,26 +60,31 @@ def analyze():
     if not text:
         return jsonify({"error": "No text provided"}), 400
 
-    # --- 2) Hard token-length cutoff check ---
-    enc_len = tokenizer(text, return_tensors="pt", truncation=False).input_ids.shape[-1]
-    max_len = tokenizer.model_max_length
-    if enc_len > max_len:
-        return (
-            jsonify({
-                "error": f"Text too long: {enc_len} tokens (max {max_len})."
-            }),
-            413
+    # ─── 3) Break into token-safe chunks ────────────────────────────────────────
+    max_model_tokens = tokenizer.model_max_length  # ~1024
+    # we'll summarize in windows of 800 tokens to leave room for the summary itself
+    chunks = chunk_text(text, max_tokens=800, overlap_tokens=50)
+
+    # ─── 4) Summarize each chunk ────────────────────────────────────────────────
+    partial_summaries = []
+    for chunk in chunks:
+        out = summarizer(
+            chunk,
+            max_length=130,
+            min_length=30,
+            do_sample=False,
+            truncation=True
         )
+        partial_summaries.append(out[0]["summary_text"])
 
-    # --- 3) Summarize (with trimming to LED’s window if needed) ---
-    summary = summarizer(
-        text,
-        max_length=130,
-        min_length=30,
-        do_sample=False,
-        truncation=True)[0]["summary_text"]
+    # ─── 5) Combine partial summaries into the final summary ────────────────────
+    # Option A: Just concatenate
+    final_summary = " ".join(partial_summaries)
 
-    return jsonify({"summary": summary})
+    return jsonify({
+        "summary": final_summary,
+        "chunks_summarized": len(chunks)
+    })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
