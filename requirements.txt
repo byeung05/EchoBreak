@@ -1,4 +1,4 @@
 flask
 transformers
-torch
-flask-cors
+accelerate
+
