@@ -21,12 +21,10 @@ CORS(app)
 
 # ─── 1) Load BART summarization pipeline ───────────────────────────────────────
 MODEL_NAME = "sshleifer/distilbart-cnn-12-6"
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-model     = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
 summarizer = pipeline(
     "summarization",
-    model=model,
-    tokenizer=tokenizer,
+    model=MODEL_NAME,
+    
     device=-1   # change to 0 if you have a GPU
 )
 
