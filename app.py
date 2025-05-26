@@ -31,16 +31,12 @@ summarizer = pipeline(
 
 # ─── 2) Chunking helper ────────────────────────────────────────────────────────
 def chunk_text(text, max_tokens=800, overlap_tokens=50):
-    """
-    Splits `text` into chunks of ≤ max_tokens (with a small overlap to maintain context).
-    Returns a list of strings.
-    """
-    tokens = summarizer.tokenizer.tokenize(text)
+    tokens = tokenizer.tokenize(text)
     chunks = []
     start = 0
     while start < len(tokens):
         end = min(start + max_tokens, len(tokens))
-        chunk = summarizer.tokenizer.convert_tokens_to_string(tokens[start:end])
+        chunk = tokenizer.convert_tokens_to_string(tokens[start:end])
         chunks.append(chunk)
         start = end - overlap_tokens
     return chunks
