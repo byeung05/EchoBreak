@@ -6,8 +6,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git \
- && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
@@ -17,13 +17,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 2) Pre-download the HF model into the image cache
-#    Using <<-EOF allows indenting the script for readability
-RUN python - <<-EOF
-    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-    model = "sshleifer/distilbart-cnn-12-6"
-    AutoTokenizer.from_pretrained(model)
-    AutoModelForSeq2SeqLM.from_pretrained(model)
-EOF
+RUN python -c "from transformers import AutoTokenizer, AutoModelForSeq2SeqLM; model='sshleifer/distilbart-cnn-12-6'; AutoTokenizer.from_pretrained(model); AutoModelForSeq2SeqLM.from_pretrained(model)"
 
 # 3) Copy the rest of your application code
 COPY . .
