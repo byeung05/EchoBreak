@@ -1,25 +1,31 @@
 FROM python:3.10-slim
-
-# Avoid interactive prompts during build
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
- && rm -rf /var/lib/apt/lists/*
+# Install system deps
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set work directory
 WORKDIR /app
 
-# Copy files
-COPY . /app
-
-# Install Python dependencies
+# 1) Install Python deps first (including transformers)
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose port
+# 2) Pre-download the HF model into the image cache
+RUN python - <<EOF
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+model="sshleifer/distilbart-cnn-12-6"
+AutoTokenizer.from_pretrained(model)
+AutoModelForSeq2SeqLM.from_pretrained(model)
+EOF
+
+# 3) Copy your code last
+COPY . .
+
+# Cloud Run expects PORT=8080
 ENV PORT=8080
 EXPOSE 8080
 
-# Run the app
-CMD ["python", "app.py"]
+# (Optional) Use gunicorn for faster startup and robust serving
+RUN pip install --no-cache-dir gunicorn
+CMD ["gunicorn", "--workers", "1", "--bind", "0.0.0.0:8080", "app:app"]
