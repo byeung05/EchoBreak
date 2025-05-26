@@ -20,7 +20,7 @@ CORS(app)
 # )
 
 # ─── 1) Load BART summarization pipeline ───────────────────────────────────────
-MODEL_NAME = "sshleifer/distilbart-cnn-12-6"
+MODEL_NAME = "t5-small"
 summarizer = pipeline(
     "summarization",
     model=MODEL_NAME,
