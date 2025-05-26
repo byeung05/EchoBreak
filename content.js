@@ -3,7 +3,7 @@
 
   async function sendToBackend(text) {
     try {
-      const response = await fetch("https://echobreak.onrender.com/analyze", {
+      const response = await fetch("https://echobreak-701039546082.europe-west1.run.app", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
