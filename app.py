@@ -84,7 +84,7 @@ def analyze():
     })
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5000"))
+    port = int(os.environ.get("PORT", "8080"))
     host = "0.0.0.0"
     print(f"🔌 Binding to {host}:{port}…")
     app.run(host=host, port=port)
