@@ -16,8 +16,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# # 2) Pre-download the HF model into the image cache
-# RUN python -c "from transformers import AutoTokenizer, AutoModelForSeq2SeqLM; model='t5-small'; AutoTokenizer.from_pretrained(model); AutoModelForSeq2SeqLM.from_pretrained(model)"
+# 2) Pre-download the HF model into the image cache
+RUN python -c "from transformers import AutoTokenizer, AutoModelForSeq2SeqLM; model='t5-small'; AutoTokenizer.from_pretrained(model); AutoModelForSeq2SeqLM.from_pretrained(model)"
 
 # 3) Copy the rest of your application code
 COPY . .
