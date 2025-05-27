@@ -1,28 +1,215 @@
+
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8" />
   <title>EchoBreak</title>
-  <link rel="stylesheet" href="sidebar.css" />
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    
+    #sidebar {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    }
+    
+    h2 {
+      margin: 0 0 8px 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    
+    h3 {
+      margin: 16px 0 8px 0;
+      font-size: 16px;
+      font-weight: 500;
+      opacity: 0.9;
+    }
+    
+    #byline, #stats {
+      opacity: 0.7;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    
+    #url {
+      opacity: 0.6;
+      font-size: 11px;
+      word-break: break-all;
+      margin-bottom: 16px;
+    }
+    
+    hr {
+      border: none;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.2);
+      margin: 16px 0;
+    }
+    
+    #summary {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      min-height: 60px;
+    }
+    
+    .loading {
+      color: #ffd700;
+      font-style: italic;
+    }
+    
+    .error {
+      color: #ff6b6b;
+      font-weight: 500;
+    }
+    
+    #progress {
+      max-height: 200px;
+      overflow-y: auto;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 6px;
+      padding: 8px;
+      font-size: 11px;
+    }
+    
+    .progress-item {
+      margin-bottom: 4px;
+      opacity: 0.8;
+    }
+    
+    .progress-error {
+      margin-bottom: 4px;
+      color: #ff6b6b;
+    }
+    
+    .progress-time {
+      opacity: 0.6;
+      margin-right: 8px;
+    }
+    
+    .progress-message {
+      opacity: 0.9;
+    }
+    
+    #content {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 12px;
+      border-radius: 8px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 3px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.5);
+    }
+  </style>
 </head>
 <body>
   <div id="sidebar">
     <h2 id="title">Loading...</h2>
     <p id="byline"></p>
+    <p id="stats"></p>
+    <p id="url"></p>
     <hr />
 
     <!-- AI-generated summary -->
     <h3>🧠 AI Summary</h3>
-    <div id="summary" style="white-space: pre-wrap;">Loading summary...</div>
+    <div id="summary">Loading summary...</div>
+
+    <!-- Progress log -->
+    <h3>📊 Processing Log</h3>
+    <div id="progress"></div>
     <hr />
 
     <!-- Full article content fallback -->
     <h3>📄 Full Content</h3>
-    <div id="content" style="white-space: pre-wrap;"></div>
+    <div id="content"></div>
   </div>
-  <script src="sidebar.js"></script>
+  
+  <script>
+    // Load analysis data from chrome.storage
+    window.onload = async () => {
+      const { articleData } = await chrome.storage.local.get("articleData");
+
+      if (articleData) {
+        document.getElementById("title").innerText = articleData.title;
+        document.getElementById("byline").innerText = articleData.byline;
+        document.getElementById("url").innerText = articleData.url;
+        
+        // Show word count if available
+        if (articleData.wordCount) {
+          document.getElementById("stats").innerText = `📊 ${articleData.wordCount.toLocaleString()} words`;
+        }
+        
+        // Display summary or error
+        if (articleData.error) {
+          document.getElementById("summary").innerHTML = `<div class="error">❌ ${articleData.summary}</div>`;
+        } else {
+          document.getElementById("summary").innerText = articleData.summary;
+        }
+        
+        // Show content preview
+        if (articleData.content) {
+          document.getElementById("content").innerText = articleData.content.substring(0, 1000) + '...';
+        }
+      }
+    };
+
+    // Listen for progress updates from content script
+    window.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'progress_update') {
+        const progressDiv = document.getElementById("progress");
+        const message = event.data.message;
+        const timestamp = event.data.timestamp;
+        const isError = event.data.isError;
+        
+        // Create progress entry
+        const progressEntry = document.createElement('div');
+        progressEntry.className = isError ? 'progress-error' : 'progress-item';
+        progressEntry.innerHTML = `
+          <span class="progress-time">${timestamp}</span>
+          <span class="progress-message">${message}</span>
+        `;
+        
+        // Add to progress log
+        progressDiv.appendChild(progressEntry);
+        progressDiv.scrollTop = progressDiv.scrollHeight;
+        
+        // Update main summary area if it's still loading
+        const summaryDiv = document.getElementById("summary");
+        if (summaryDiv.innerText === "Loading summary...") {
+          summaryDiv.innerHTML = `<div class="loading">${message}</div>`;
+        }
+      }
+    });
+  </script>
 </body>
 </html>
-
-
-
