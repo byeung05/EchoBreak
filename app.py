@@ -1,139 +1,222 @@
 from flask import Flask, request, jsonify
-from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
+from transformers import pipeline
 from flask_cors import CORS
 import os
+import time
 
 app = Flask(__name__)
 CORS(app)
 
-# Current Render Process only has 512 MiB of memory. Switching approach 
+# Try very small models in order of size (all under 500MB)
+SMALL_MODELS = [
+    "sshleifer/distilbart-cnn-6-6",    # ~300MB - Smallest BART
+    "google/pegasus-xsum",             # ~570MB - Good for news
+    "facebook/bart-large-cnn",         # ~1.6GB - Last resort
+]
 
-# LED summarizer setup 
-# LED_MODEL   = "allenai/led-base-16384"
-# tokenizer   = AutoTokenizer.from_pretrained(LED_MODEL)
-# model       = AutoModelForSeq2SeqLM.from_pretrained(LED_MODEL)
-# summarizer  = pipeline(
-#     "summarization",
-#     model=model,
-#     tokenizer=tokenizer,
-#     device=-1   # CPU; change to 0 if you have a GPU
-# )
+summarizer = None
+MODEL_NAME = None
 
-# Initialize T5 model and tokenizer
-MODEL_NAME = "t5-small"
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-summarizer = pipeline(
-    "summarization",
-    model=MODEL_NAME,
-    device=-1   # CPU; change to 0 if you have a GPU
-)
-
-def chunk_text(text, max_tokens=400, overlap_tokens=50):
-    """Split text into chunks that fit within model limits"""
+print("🔄 Loading summarization model...")
+for model_name in SMALL_MODELS:
     try:
-        # Simple word-based chunking since T5 tokenizer can be memory intensive
-        words = text.split()
-        chunks = []
+        print(f"🔄 Trying model: {model_name}")
+        start_time = time.time()
         
-        # Rough estimate: ~4 characters per token
-        words_per_chunk = max_tokens * 3  # Conservative estimate
+        summarizer = pipeline(
+            "summarization",
+            model=model_name,
+            device=-1,  # CPU only
+            framework="pt",
+            model_kwargs={"torch_dtype": "auto"}  # Use smaller precision if available
+        )
         
-        start = 0
-        while start < len(words):
-            end = min(start + words_per_chunk, len(words))
-            chunk = " ".join(words[start:end])
-            chunks.append(chunk)
-            start = end - (overlap_tokens * 3)  # Overlap in words
-            
-        return chunks
+        load_time = time.time() - start_time
+        MODEL_NAME = model_name
+        print(f"✅ Loaded {model_name} in {load_time:.1f}s")
+        break
+        
     except Exception as e:
-        print(f"Chunking error: {e}")
-        return [text[:2000]]  # Fallback: just truncate
+        print(f"❌ Failed to load {model_name}: {e}")
+        continue
+
+if not summarizer:
+    print("❌ Could not load any model! Using fallback text extraction.")
+    MODEL_NAME = "fallback"
+
+def simple_extractive_summary(text, max_sentences=3):
+    """Fallback summarization using sentence extraction"""
+    import re
+    
+    sentences = re.split(r'[.!?]+', text)
+    sentences = [s.strip() for s in sentences if len(s.strip()) > 30]
+    
+    if len(sentences) <= max_sentences:
+        return '. '.join(sentences) + '.'
+    
+    # Score by length and position
+    scored = [(len(s) * (1 + 1/((i+1)**0.5)), s) for i, s in enumerate(sentences)]
+    scored.sort(reverse=True)
+    
+    top_sentences = [s[1] for s in scored[:max_sentences]]
+    
+    # Maintain original order
+    result = []
+    for sentence in sentences:
+        if sentence in top_sentences:
+            result.append(sentence)
+            top_sentences.remove(sentence)
+    
+    return '. '.join(result) + '.'
+
+def chunk_text(text, max_words=200):
+    """Split text into smaller chunks"""
+    words = text.split()
+    chunks = []
+    
+    for i in range(0, len(words), max_words):
+        chunk = ' '.join(words[i:i + max_words])
+        if len(chunk.strip()) > 50:  # Skip tiny chunks
+            chunks.append(chunk)
+    
+    return chunks
 
 @app.route("/")
 def home():
-    return jsonify({"status": "EchoBreak is running!", "endpoint": "/analyze"})
+    return jsonify({
+        "status": "EchoBreak is running!",
+        "model": MODEL_NAME,
+        "endpoint": "/analyze"
+    })
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
         data = request.json
         if not data:
-            return jsonify({"error": "No JSON data provided"}), 400
+            return jsonify({"error": "No JSON data provided", "progress": "error"}), 400
             
         text = data.get("text", "")
         if not text:
-            return jsonify({"error": "No text provided"}), 400
+            return jsonify({"error": "No text provided", "progress": "error"}), 400
 
-        print(f"Received text length: {len(text)} characters")
-
-        # Limit input size to prevent memory issues
-        if len(text) > 10000:
-            text = text[:10000]
-            print("Text truncated to 10000 characters")
-
-        # Break into manageable chunks
-        chunks = chunk_text(text, max_tokens=400, overlap_tokens=50)
-        print(f"Created {len(chunks)} chunks")
-
-        # Summarize each chunk
-        partial_summaries = []
-        for i, chunk in enumerate(chunks):
-            try:
-                print(f"Processing chunk {i+1}/{len(chunks)}")
-                
-                # Skip very short chunks
-                if len(chunk.strip()) < 50:
-                    continue
-                    
-                result = summarizer(
-                    chunk,
-                    max_length=100,
-                    min_length=20,
-                    do_sample=False,
-                    truncation=True
-                )
-                partial_summaries.append(result[0]["summary_text"])
-                
-            except Exception as e:
-                print(f"Error processing chunk {i}: {e}")
-                continue
-
-        if not partial_summaries:
-            return jsonify({"error": "Failed to generate summary"}), 500
-
-        # Combine summaries
-        final_summary = " ".join(partial_summaries)
+        print(f"📄 Processing article: {len(text)} characters")
         
-        # If combined summary is too long, summarize it again
-        if len(final_summary) > 1000:
+        # Limit text size for memory constraints
+        if len(text) > 6000:
+            text = text[:6000]
+            print("✂️ Text truncated to 6000 characters")
+
+        start_time = time.time()
+        
+        # Use fallback if no ML model available
+        if MODEL_NAME == "fallback":
+            print("🔄 Using extractive summarization...")
+            summary = simple_extractive_summary(text, max_sentences=4)
+            process_time = time.time() - start_time
+            
+            return jsonify({
+                "summary": summary,
+                "method": "extractive",
+                "model": "fallback",
+                "processing_time": f"{process_time:.1f}s",
+                "progress": "complete",
+                "original_length": len(text)
+            })
+
+        # ML-based summarization
+        print(f"🧠 Using {MODEL_NAME} for summarization...")
+        
+        # For very long text, chunk it
+        if len(text) > 3000:
+            chunks = chunk_text(text, max_words=400)
+            print(f"📊 Split into {len(chunks)} chunks")
+            
+            partial_summaries = []
+            for i, chunk in enumerate(chunks):
+                try:
+                    print(f"🔄 Processing chunk {i+1}/{len(chunks)}")
+                    
+                    result = summarizer(
+                        chunk,
+                        max_length=60,
+                        min_length=15,
+                        do_sample=False,
+                        truncation=True
+                    )
+                    partial_summaries.append(result[0]["summary_text"])
+                    
+                except Exception as e:
+                    print(f"❌ Error in chunk {i}: {e}")
+                    continue
+            
+            if partial_summaries:
+                # Combine and re-summarize if needed
+                combined = " ".join(partial_summaries)
+                if len(combined) > 1000:
+                    try:
+                        final_result = summarizer(
+                            combined,
+                            max_length=120,
+                            min_length=30,
+                            do_sample=False,
+                            truncation=True
+                        )
+                        summary = final_result[0]["summary_text"]
+                    except:
+                        summary = combined[:800] + "..."
+                else:
+                    summary = combined
+            else:
+                summary = "Could not generate summary from chunks."
+                
+        else:
+            # Direct summarization for shorter text
+            print("🔄 Direct summarization...")
             try:
-                final_result = summarizer(
-                    final_summary,
-                    max_length=200,
-                    min_length=50,
+                result = summarizer(
+                    text,
+                    max_length=100,
+                    min_length=25,
                     do_sample=False,
                     truncation=True
                 )
-                final_summary = final_result[0]["summary_text"]
+                summary = result[0]["summary_text"]
             except Exception as e:
-                print(f"Final summarization error: {e}")
+                print(f"❌ Summarization failed: {e}")
+                summary = simple_extractive_summary(text)
 
-        print(f"Generated summary length: {len(final_summary)}")
+        process_time = time.time() - start_time
+        print(f"✅ Summary complete in {process_time:.1f}s")
         
         return jsonify({
-            "summary": final_summary,
-            "chunks_processed": len(partial_summaries),
-            "original_length": len(text)
+            "summary": summary,
+            "model": MODEL_NAME,
+            "processing_time": f"{process_time:.1f}s",
+            "progress": "complete",
+            "original_length": len(text),
+            "summary_length": len(summary)
         })
 
     except Exception as e:
         print(f"❌ Server error: {e}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({
+            "error": f"Server error: {str(e)}", 
+            "progress": "error"
+        }), 500
+
+# Health check endpoint
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "healthy",
+        "model": MODEL_NAME,
+        "timestamp": time.time()
+    })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     host = "0.0.0.0"
-    print(f"🔌 Starting EchoBreak server on {host}:{port}")
-    print(f"📝 Model: {MODEL_NAME}")
+    print(f"🚀 EchoBreak server starting on {host}:{port}")
+    print(f"🤖 Using model: {MODEL_NAME}")
     app.run(host=host, port=port, debug=False)
