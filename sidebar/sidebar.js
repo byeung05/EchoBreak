@@ -18,6 +18,11 @@ window.onload = async () => {
     } else {
       document.getElementById("summary").innerText = articleData.summary;
     }
+
+    // Show content preview
+    if (articleData.content) {
+      document.getElementById("content").innerText = articleData.content.substring(0, 1000) + '...';
+    }
   }
 };
 
